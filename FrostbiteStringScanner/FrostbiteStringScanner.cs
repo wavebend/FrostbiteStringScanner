@@ -288,7 +288,7 @@ namespace FrostbiteStringScanner
                     if (!hasForwardUtf16NullTerminator)
                     {
                         stringType = StringType.Unknown;
-                        bytesToSkip = bytesBeforeTwoByteNullTerminator; // bytes scanned before encountering invalid
+                        bytesToSkip = 4;
                         return false;
                     }
                     stringType = StringType.Utf16;
@@ -427,10 +427,6 @@ namespace FrostbiteStringScanner
                     return "";
 
                 string readStr = Encoding.Unicode.GetString(rawUtf16);
-                if (readStr.Contains("@DBFAECG $\"&!%#'`dbfaecg"))
-                {
-                    offset += 0;
-                }
                 return readStr;
             }
         }

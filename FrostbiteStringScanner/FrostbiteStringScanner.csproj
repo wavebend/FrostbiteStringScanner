@@ -8,6 +8,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Resources\Junk\fftw_lib_c.txt" />
+    <None Remove="Resources\Junk\misc.txt" />
+    <None Remove="Resources\Junk\windows_api_function_names.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Junk\fftw_lib_c.txt" />
+    <EmbeddedResource Include="Resources\Junk\misc.txt" />
+    <EmbeddedResource Include="Resources\Junk\windows_api_function_names.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="PeNet" Version="4.1.1" />
   </ItemGroup>
 

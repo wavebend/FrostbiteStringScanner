@@ -124,7 +124,7 @@ namespace FrostbiteStringScanner
 
                     // Quickly check if the first byte is printable and non-zero
                     byte firstByte = m_fileBytes[offset];
-                    if (!IsPrintableAscii(firstByte, false) || firstByte == 0x00)
+                    if (!IsPrintableAscii(firstByte, true) || firstByte == 0x00)
                     {
                         offset += 4;
                         continue;
@@ -146,22 +146,35 @@ namespace FrostbiteStringScanner
 
                     // Attempt to read a string
                     (string readStr, ulong bytesConsumed) = ReadString(offset, sectionEnd - 1, stringType);
+
+                    // Heuristic: if the previous byte is a lowercase alpha char, we skip the string entirely. lowercase only because including uppercase leads to too many false positives
+                    // while the string is readable, this heuristic implies it's likely unaligned to 4, meaning its a useless string
+                    byte previousByte = m_fileBytes[offset - 1];
+                    if (IsLowerAlphaAscii(previousByte))
+                    {
+                        offset += bytesConsumed;
+                        continue;
+                    }
+
                     if (!string.IsNullOrEmpty(readStr))
                     {
-                        if (m_scanParams.EscapeSpecialCharacters)
-                        {
-                            readStr = EscapeSpecialCharacters(readStr);
-                        }
-
-                        AddString(readStr, foundStrings);
-
-                        if (!string.IsNullOrEmpty(m_scanParams.StopOnString) &&
-                            readStr == m_scanParams.StopOnString)
-                        {
-                            break; // immediately stop scanning this section
-                        }
-
                         offset += bytesConsumed;
+
+                        if (!string.IsNullOrWhiteSpace(readStr))
+                        {
+                            if (m_scanParams.EscapeSpecialCharacters)
+                            {
+                                readStr = EscapeSpecialCharacters(readStr);
+                            }
+
+                            AddString(readStr, foundStrings);
+
+                            if (!string.IsNullOrEmpty(m_scanParams.StopOnString) &&
+                                readStr == m_scanParams.StopOnString)
+                            {
+                                break; // immediately stop scanning this section
+                            }
+                        }
                         continue;
                     }
                     else
@@ -174,7 +187,7 @@ namespace FrostbiteStringScanner
                 {
                     // Quickly check if the first byte is printable and non-zero
                     byte firstByte = m_fileBytes[offset];
-                    if (!IsPrintableAscii(firstByte, false) || firstByte == 0x00)
+                    if (!IsPrintableAscii(firstByte, true) || firstByte == 0x00)
                     {
                         offset = AlignTo8(offset);
                         continue;
@@ -196,22 +209,35 @@ namespace FrostbiteStringScanner
 
                     // Attempt to read a string
                     (string readStr, ulong bytesConsumed) = ReadString(offset, sectionEnd - 1, stringType);
+
+                    // Heuristic: if the previous byte is a lowercase alpha char, we skip the string entirely. lowercase only because including uppercase leads to too many false positives
+                    // while the string is readable, this heuristic implies it's likely unaligned to 4, meaning its a useless string
+                    byte previousByte = m_fileBytes[offset - 1];
+                    if (IsLowerAlphaAscii(previousByte))
+                    {
+                        offset += bytesConsumed;
+                        continue;
+                    }
+
                     if (!string.IsNullOrEmpty(readStr))
                     {
-                        if (m_scanParams.EscapeSpecialCharacters)
-                        {
-                            readStr = EscapeSpecialCharacters(readStr);
-                        }
-
-                        AddString(readStr, foundStrings);
-
-                        if (!string.IsNullOrEmpty(m_scanParams.StopOnString) &&
-                            readStr == m_scanParams.StopOnString)
-                        {
-                            break; // immediately stop scanning this section
-                        }
-
                         offset += bytesConsumed;
+
+                        if (!string.IsNullOrWhiteSpace(readStr))
+                        {
+                            if (m_scanParams.EscapeSpecialCharacters)
+                            {
+                                readStr = EscapeSpecialCharacters(readStr);
+                            }
+
+                            AddString(readStr, foundStrings);
+
+                            if (!string.IsNullOrEmpty(m_scanParams.StopOnString) &&
+                                readStr == m_scanParams.StopOnString)
+                            {
+                                break; // immediately stop scanning this section
+                            }
+                        }
                         continue;
                     }
                     else
@@ -248,7 +274,7 @@ namespace FrostbiteStringScanner
                     }
                 }
             }
-            if (!string.IsNullOrWhiteSpace(readStr))
+            if (!string.IsNullOrWhiteSpace(readStr) && !readStr.All(char.IsWhiteSpace))
             {
                 foundStrings.Add(readStr);
             }
@@ -256,17 +282,17 @@ namespace FrostbiteStringScanner
 
         private bool IsReadableStringHeuristic(ulong offset, ulong maxOffset, out StringType stringType, out ulong bytesToSkip)
         {
+            bool result;
             stringType = StringType.Unknown;
             bytesToSkip = 0;
 
             (bool hasForwardAsciiNullTerminator, ulong bytesBeforeSingleByteNullTerminator) = LookAheadForNullTerminator(offset, maxOffset, StringType.Ascii);
 
-            // Keep in mind we're at 0x04 alignment
-            // If 0x02 then we only have one byte before a null terminator. This is likely UTF16 but can also be a false positive. It can also be valid ascii strings in rare cases (single letters such as X, Y, Z).
             if (bytesBeforeSingleByteNullTerminator == 0x02)
             {
                 ushort currentCh = BitConverter.ToUInt16(m_fileBytes, (int)offset);
                 ushort nextCh = BitConverter.ToUInt16(m_fileBytes, (int)(offset + 2));
+
                 if (IsPrintableAscii(m_fileBytes[offset]) && nextCh == 0x0000)
                 {
                     // This is a heuristic to skip some strings by checking the next 4 bytes
@@ -276,27 +302,42 @@ namespace FrostbiteStringScanner
                     {
                         stringType = StringType.Unknown;
                         bytesToSkip = 8;
-                        return false;
+                        result = false;
                     }
-                    stringType = StringType.Ascii;
-                    return true;
+                    else
+                    {
+                        stringType = StringType.Ascii;
+                        result = true;
+                    }
                 }
-                else if (m_scanParams.ScanForUtf16Le && IsPrintableAscii(m_fileBytes[offset]) && IsPrintableUtf16(currentCh, false) && IsPrintableUtf16(nextCh))
+                else if (m_scanParams.ScanForUtf16Le && IsPrintableAscii(m_fileBytes[offset])  && IsPrintableUtf16(currentCh, false) && IsPrintableUtf16(nextCh))
                 {
-                    // At this point we have something like [xx 00 xx 00] where both short values are ascii printable
                     (bool hasForwardUtf16NullTerminator, ulong bytesBeforeTwoByteNullTerminator) = LookAheadForNullTerminator(offset, maxOffset, StringType.Utf16);
                     if (!hasForwardUtf16NullTerminator)
                     {
                         stringType = StringType.Unknown;
                         bytesToSkip = 4;
-                        return false;
+                        result = false;
                     }
-                    stringType = StringType.Utf16;
-                    return true;
+                    else
+                    {
+                        stringType = StringType.Utf16;
+                        result = true;
+                    }
+                }
+                else
+                {
+                    stringType = StringType.Ascii;
+                    result = true;
                 }
             }
-            stringType = StringType.Ascii;
-            return true;
+            else
+            {
+                stringType = StringType.Ascii;
+                result = true;
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -460,6 +501,16 @@ namespace FrostbiteStringScanner
             {
                 return (value >= 0x20 && value <= 0x7E);
             }
+        }
+
+        private bool IsLowerAlphaAscii(byte b)
+        {
+            return (b >= 0x61 && b <= 0x7A); // a-z
+        }
+
+        private bool IsLowerAlphaUtf16(ushort value)
+        {
+            return (value >= 0x61 && value <= 0x7A); // a-z
         }
 
         private ulong AlignTo4(ulong val)
